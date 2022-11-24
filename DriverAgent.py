@@ -27,30 +27,29 @@ class DriverAgent():
     def __init__( self, downDir ):
         
         modDir = os.path.dirname(os.path.abspath(__file__))
-        
+        self.By = By
         self.keys = Keys
         self.exec_path = modDir + "\\_driver\\geckodriver.exe"
         self.downDir = downDir
     
     def raiseDriver( self, headless ):
         
+        print("\nRaising webdriver")
         serv = Service( self.exec_path )
-        # serv.log_path = self.logs_path
-        serv.log_path = "geckolog.log" # os.path.devnull
-        
+        serv.log_path = "geckolog.log"
         opts = self.getOptions( headless )
         
-        print("\nRaising webdriver, please wait...\n")
         try: driver = webdriver.Firefox( options=opts, service=serv )
-        except Exception as e: 
-            print( f"\nDRIVER EXC {type(e).__name__}" )
-            inp = input( "ANY INPUT TO RETRY... " )
-        else: 
+        except Exception as e: print( 
+            f"DRIVER EXC {type(e).__name__}\n{e}\n"
+            f"Check geckodriver.exe at {self.exec_path}" ) # offer install
+        else:
+            if not driver: return
             driver.set_page_load_timeout(30)
             actions = ActionChains(driver)
             self.driver = driver
             self.actions = actions
-            print( "Driver running" )
+            print( "Driver running\n" )
     
     def getOptions( self, headless ):
         
@@ -66,8 +65,8 @@ class DriverAgent():
         
         pref = opts.set_preference
         
-        user_agent = ( "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:103.0) "
-            + "Gecko/20100101 Firefox/103.0" )
+        user_agent = ( f"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:103.0) "
+            f"Gecko/20100101 Firefox/103.0" )
             
         pref("general.useragent.override", user_agent)
         
@@ -101,11 +100,11 @@ class DriverAgent():
         return opts
     
     
-    def getBrowser( self, headless=False, initURL=None ):
+    def getBrowser( self, retries=3, headless=False, initURL=None ):
         
         if not initURL: initURL = "http://www.example.com"
         
-        while True:
+        while retries:
             try: self.driver.get( initURL )
             except (
                 NameError, 
@@ -114,21 +113,44 @@ class DriverAgent():
                 ConnectionRefusedError,
                 MaxRetryError) as e: 
                 self.raiseDriver(headless)
-            else: time.sleep(self.randDbl(3, 4)); return
+                retries -=1
+            else: time.sleep(self.randDbl(3, 4)); return True
+        
+        print( f"No dice after {retries=} - check some things" )
+        return False
     
+    def getUrl( self, url ):
+        try: self.driver.get( url )
+        except Exception as e: 
+            print( f"{type(e).__name__}\n{e}" )
+            return False
+        return True
     
-    def xpathEC( self, _xpath, waitLo=5, waitHi=10, drobject=None):
+    def awaitXP( self, _xpath, waitLo=5, waitHi=10, drobject=None):
         driver = self.driver if not drobject else drobject
         while True:
-            try: return WebDriverWait( 
-                driver, self.randDbl( waitLo, waitHi )).until( 
-                    EC.presence_of_element_located(( By.XPATH, _xpath )))
+            try: return WebDriverWait( driver, self.randDbl( waitLo, waitHi )
+                ).until(EC.presence_of_element_located(( By.XPATH, _xpath )))
             except TimeoutException: return None
     
+    def findXP(self, xp, all=False, drobject=None ):
+        driver = self.driver if not drobject else drobject
+        return (
+            driver.find_elements( By.XPATH, xp ) if not all 
+            else self.driver.find_elements( self.By.XPATH, xp ) )
+    
+    def retrieve( self, src, fPth ):
+        try: urllib.request.urlretrieve( src, fPth )
+        except urllib.error.HTTPError: 
+            print( f"HTTPError on:\n{src=}" )
+            return False
+        return True
+    
+    def scrollTo( self, ob ): 
+        self.driver.execute_script("arguments[0].scrollIntoView();", ob)
     
     def randDbl( self, loLimit=0.4, hiLimit=1.9 ):
         return random.uniform(loLimit, hiLimit)
-    
     
     def randSleep( self, lo=2, hi=3 ): time.sleep( self.randDbl(lo, hi) )
     
